@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "microsql-engine"
+version = "0.1.0"
+description = "Micro-SQL engine for CSV files (educational project)"
+authors = ["Student <student@example.com>"]
+readme = "README.md"
+packages = [{ include = "microsql", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.9.10"
+
+[tool.poetry.scripts]
+microsql = "microsql.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
