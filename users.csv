@@ -1,4 +1,5 @@
 id,name,role,salary
-1,John Doe,admin,5000
+1,John Doe,admin,1500
 2,Jane Smith,user,3000
 3,Alex,user,2500
+4,Maria,guest,1800
