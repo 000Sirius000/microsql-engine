@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from microsql.engine import execute_query
+from microsql.exceptions import FileSystemException, MicroSQLException
 from microsql.parser import parse_query
 
 
@@ -21,15 +22,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    sql_text = args.query_file.read_text(encoding="utf-8")
-    query = parse_query(sql_text)
-    result_rows = execute_query(query, args.data_dir)
+    try:
+        sql_text = args.query_file.read_text(encoding="utf-8")
+        query = parse_query(sql_text)
+        result_rows = execute_query(query, args.data_dir)
+        _print_as_csv(result_rows)
+        return 0
+    except MicroSQLException as error:
+        _print_error(error)
+        return 1
+    except OSError as error:
+        wrapped = FileSystemException(
+            f"Cannot read query file: {args.query_file} ({error})",
+            1,
+        )
+        _print_error(wrapped)
+        return 1
 
-    _print_as_csv(result_rows)
+
+def _print_error(error: MicroSQLException) -> None:
+    print(
+        f"Error: {error.error_type} - {error.message} у рядку {error.line_number}",
+        file=sys.stderr,
+    )
 
 
 def _print_as_csv(rows: list[dict[str, object]]) -> None:
@@ -41,3 +60,7 @@ def _print_as_csv(rows: list[dict[str, object]]) -> None:
     writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
