@@ -37,3 +37,4 @@ node_modules/
 .pytest_cache/
 .coverage
 htmlcov/
+TEST_RESULTS.txt
