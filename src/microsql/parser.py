@@ -7,10 +7,10 @@ from microsql.ast_nodes import (
     Expr,
     Identifier,
     Literal,
+    Logical,
     Operand,
     OrderBy,
     SelectQuery,
-    Logical,
 )
 from microsql.exceptions import ParserException
 from microsql.tokenizer import Token, tokenize_where
@@ -150,7 +150,10 @@ def parse_query(sql_text: str) -> SelectQuery:
     where_expr = None
     order_by = None
 
-    if where_match is None and order_match is None:
+    clause_positions = [match.start() for match in (where_match, order_match) if match is not None]
+    first_clause_start = min(clause_positions) if clause_positions else None
+
+    if first_clause_start is None:
         trailing = rest.strip().rstrip(";")
         if trailing:
             line_number = _line_number_from_offset(sql_text, source_end + rest.index(trailing))
@@ -158,6 +161,13 @@ def parse_query(sql_text: str) -> SelectQuery:
                 raise ParserException("Expected keyword WHERE before filter condition", line_number)
             raise ParserException("Expected WHERE or ORDER BY after FROM clause", line_number)
     else:
+        prefix = rest[:first_clause_start].strip()
+        if prefix:
+            line_number = _line_number_from_offset(sql_text, source_end + rest.index(prefix))
+            if _looks_like_filter(prefix):
+                raise ParserException("Expected keyword WHERE before filter condition", line_number)
+            raise ParserException("Expected WHERE or ORDER BY after FROM clause", line_number)
+
         if where_match is not None:
             where_content_start = source_end + where_match.end()
             where_content_end = source_end + (order_match.start() if order_match is not None else len(rest))
