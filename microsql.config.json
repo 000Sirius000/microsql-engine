@@ -1,0 +1,7 @@
+{
+  "filter": {
+    "engine": "specification",
+    "enable_not_operator": true,
+    "case_sensitive_strings": true
+  }
+}

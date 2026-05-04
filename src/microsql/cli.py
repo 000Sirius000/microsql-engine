@@ -5,9 +5,12 @@ import csv
 import sys
 from pathlib import Path
 
+from microsql.config import load_config
 from microsql.engine import execute_query
 from microsql.exceptions import FileSystemException, MicroSQLException
 from microsql.parser import parse_query
+
+DEFAULT_CONFIG_PATH = Path("microsql.config.json")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +22,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("."),
         help="Directory that contains CSV files (default: current directory)",
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to optional JSON configuration file (default: microsql.config.json)",
+    )
     return parser
 
 
@@ -27,8 +36,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        config = load_config(args.config)
         sql_text = args.query_file.read_text(encoding="utf-8")
-        query = parse_query(sql_text)
+        query = parse_query(sql_text, options=config.to_parser_options())
         result_rows = execute_query(query, args.data_dir)
         _print_as_csv(result_rows)
         return 0
