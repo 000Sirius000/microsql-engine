@@ -1,5 +1,6 @@
-id,name,role,salary
-1,John Doe,admin,1500
-2,Jane Smith,user,3000
-3,Alex,user,2500
-4,Maria,guest,1800
+id,name,role,age,salary
+1,John Doe,admin,25,1500
+2,Jane Smith,user,30,3000
+3,Alex,user,22,2500
+4,Maria,guest,19,1800
+5,Olena,admin,34,6500
