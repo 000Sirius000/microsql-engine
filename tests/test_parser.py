@@ -2,7 +2,8 @@ import pytest
 
 from microsql.ast_nodes import Comparison, Logical
 from microsql.exceptions import ParserException
-from microsql.parser import parse_query
+from microsql.parser import ParserOptions, parse_query
+from microsql.specifications import AndSpecification, NotSpecification, OrSpecification
 from microsql.tokenizer import tokenize_where
 
 
@@ -24,6 +25,19 @@ def test_tokenize_where_preserves_line_numbers() -> None:
     assert tokens[3].line_number == 4
 
 
+def test_tokenize_where_supports_not_keyword() -> None:
+    tokens = tokenize_where("NOT (role = 'guest')")
+
+    assert [token.kind for token in tokens] == [
+        "NOT",
+        "LPAREN",
+        "IDENT",
+        "COMPOP",
+        "STRING",
+        "RPAREN",
+    ]
+
+
 def test_parse_query_handles_multiline_query() -> None:
     query = parse_query(
         "SELECT name, salary\nFROM users.csv\nWHERE salary > 1000\nORDER BY salary DESC"
@@ -38,12 +52,39 @@ def test_parse_query_handles_multiline_query() -> None:
 
 
 def test_parse_query_supports_logical_expressions() -> None:
-    query = parse_query(
-        "SELECT name FROM users.csv WHERE salary > 1000 AND role = 'user'"
-    )
+    query = parse_query("SELECT name FROM users.csv WHERE salary > 1000 AND role = 'user'")
 
     assert isinstance(query.where, Logical)
+    assert isinstance(query.where, AndSpecification)
     assert query.where.operator == "AND"
+
+
+def test_parse_query_builds_nested_specification_tree() -> None:
+    query = parse_query(
+        "SELECT name FROM users.csv "
+        "WHERE (age > 20 AND role = 'admin') OR (salary > 5000)"
+    )
+
+    assert isinstance(query.where, OrSpecification)
+    assert isinstance(query.where.left, AndSpecification)
+    assert query.where.is_satisfied_by({"age": 25, "role": "admin", "salary": 1000}) is True
+    assert query.where.is_satisfied_by({"age": 18, "role": "guest", "salary": 6000}) is True
+    assert query.where.is_satisfied_by({"age": 18, "role": "guest", "salary": 1000}) is False
+
+
+def test_parse_query_supports_not_specification() -> None:
+    query = parse_query("SELECT name FROM users.csv WHERE NOT (role = 'guest')")
+
+    assert isinstance(query.where, NotSpecification)
+    assert query.where.is_satisfied_by({"role": "admin"}) is True
+    assert query.where.is_satisfied_by({"role": "guest"}) is False
+
+
+def test_parse_query_can_disable_not_operator_by_config() -> None:
+    options = ParserOptions(enable_not_operator=False)
+
+    with pytest.raises(ParserException, match="NOT operator is disabled by configuration"):
+        parse_query("SELECT name FROM users.csv WHERE NOT (role = 'guest')", options=options)
 
 
 @pytest.mark.parametrize(

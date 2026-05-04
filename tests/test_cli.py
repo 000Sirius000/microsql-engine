@@ -25,6 +25,37 @@ def test_cli_prints_csv_output(capsys, monkeypatch, tmp_path: Path) -> None:
     assert captured.err == ""
 
 
+def test_cli_reads_config_file(capsys, monkeypatch, tmp_path: Path) -> None:
+    query_file = tmp_path / "query.sql"
+    csv_file = tmp_path / "users.csv"
+    config_file = tmp_path / "microsql.config.json"
+    query_file.write_text("SELECT name FROM users.csv WHERE role = 'admin'", encoding="utf-8")
+    csv_file.write_text("name,role\nJane,ADMIN\nJohn,user\n", encoding="utf-8")
+    config_file.write_text(
+        '{"filter": {"engine": "specification", "case_sensitive_strings": false}}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "microsql",
+            str(query_file),
+            "--data-dir",
+            str(tmp_path),
+            "--config",
+            str(config_file),
+        ],
+    )
+
+    exit_code = main()
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Jane" in captured.out
+    assert "John" not in captured.out
+
+
 def test_cli_formats_error_without_traceback(capsys, monkeypatch, tmp_path: Path) -> None:
     query_file = tmp_path / "query.sql"
     csv_file = tmp_path / "users.csv"
