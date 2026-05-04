@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
-from microsql.ast_nodes import (
-    Comparison,
-    Expr,
-    Identifier,
-    Literal,
-    Logical,
-    Operand,
-    OrderBy,
-    SelectQuery,
-)
+from microsql.ast_nodes import Identifier, Literal, Operand, OrderBy, SelectQuery
 from microsql.exceptions import ParserException
+from microsql.specifications import (
+    AndSpecification,
+    ISpecification,
+    NotSpecification,
+    OrSpecification,
+    Row,
+    build_comparison_specification,
+)
 from microsql.tokenizer import Token, tokenize_where
 
 _ORDER_BY_REGEX = re.compile(
@@ -20,37 +20,61 @@ _ORDER_BY_REGEX = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _IDENTIFIER_REGEX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SUPPORTED_FILTER_ENGINES = {"specification"}
+
+
+@dataclass(frozen=True, slots=True)
+class ParserOptions:
+    filter_engine: str = "specification"
+    enable_not_operator: bool = True
+    case_sensitive_strings: bool = True
+
+    @classmethod
+    def safe_default(cls) -> ParserOptions:
+        return cls()
 
 
 class _WhereParser:
-    def __init__(self, tokens: list[Token]) -> None:
+    def __init__(self, tokens: list[Token], options: ParserOptions) -> None:
         self.tokens = tokens
+        self.options = options
         self.position = 0
 
-    def parse(self) -> Expr:
+    def parse(self) -> ISpecification[Row]:
         expr = self._parse_or()
         if self._peek() is not None:
             token = self._peek()
             raise ParserException(f"Unexpected token: {token.value}", token.line_number)
         return expr
 
-    def _parse_or(self) -> Expr:
+    def _parse_or(self) -> ISpecification[Row]:
         expr = self._parse_and()
         while self._match("OR"):
             operator = self.tokens[self.position - 1]
             right = self._parse_and()
-            expr = Logical(operator="OR", left=expr, right=right, line_number=operator.line_number)
+            expr = OrSpecification(left=expr, right=right, line_number=operator.line_number)
         return expr
 
-    def _parse_and(self) -> Expr:
-        expr = self._parse_comparison_or_group()
+    def _parse_and(self) -> ISpecification[Row]:
+        expr = self._parse_not()
         while self._match("AND"):
             operator = self.tokens[self.position - 1]
-            right = self._parse_comparison_or_group()
-            expr = Logical(operator="AND", left=expr, right=right, line_number=operator.line_number)
+            right = self._parse_not()
+            expr = AndSpecification(left=expr, right=right, line_number=operator.line_number)
         return expr
 
-    def _parse_comparison_or_group(self) -> Expr:
+    def _parse_not(self) -> ISpecification[Row]:
+        if self._match("NOT"):
+            operator = self.tokens[self.position - 1]
+            if not self.options.enable_not_operator:
+                raise ParserException(
+                    "NOT operator is disabled by configuration",
+                    operator.line_number,
+                )
+            return NotSpecification(self._parse_not(), line_number=operator.line_number)
+        return self._parse_comparison_or_group()
+
+    def _parse_comparison_or_group(self) -> ISpecification[Row]:
         if self._match("LPAREN"):
             lparen = self.tokens[self.position - 1]
             expr = self._parse_or()
@@ -60,11 +84,12 @@ class _WhereParser:
         left = self._parse_operand()
         operator = self._consume("COMPOP", "Expected comparison operator", left.line_number)
         right = self._parse_operand()
-        return Comparison(
+        return build_comparison_specification(
             left=left,
             operator=operator.value,
             right=right,
             line_number=operator.line_number,
+            case_sensitive_strings=self.options.case_sensitive_strings,
         )
 
     def _parse_operand(self) -> Operand:
@@ -105,7 +130,8 @@ class _WhereParser:
         return token
 
 
-def parse_query(sql_text: str) -> SelectQuery:
+def parse_query(sql_text: str, options: ParserOptions | None = None) -> SelectQuery:
+    options = _normalize_options(options)
     stripped_text = sql_text.strip()
     if not stripped_text:
         raise ParserException("Query is empty", 1)
@@ -141,7 +167,11 @@ def parse_query(sql_text: str) -> SelectQuery:
     where_match = _search_keyword(rest, "WHERE")
     order_match = _search_order_by(rest)
 
-    if where_match is not None and order_match is not None and order_match.start() < where_match.start():
+    if (
+        where_match is not None
+        and order_match is not None
+        and order_match.start() < where_match.start()
+    ):
         raise ParserException(
             "WHERE clause cannot appear after ORDER BY",
             _line_number_from_offset(sql_text, source_end + order_match.start()),
@@ -170,7 +200,10 @@ def parse_query(sql_text: str) -> SelectQuery:
 
         if where_match is not None:
             where_content_start = source_end + where_match.end()
-            where_content_end = source_end + (order_match.start() if order_match is not None else len(rest))
+            if order_match is None:
+                where_content_end = source_end + len(rest)
+            else:
+                where_content_end = source_end + order_match.start()
             where_text = sql_text[where_content_start:where_content_end].strip()
             if not where_text:
                 raise ParserException(
@@ -178,7 +211,10 @@ def parse_query(sql_text: str) -> SelectQuery:
                     _line_number_from_offset(sql_text, where_content_start),
                 )
             base_line = _line_number_from_offset(sql_text, where_content_start)
-            where_expr = _WhereParser(tokenize_where(where_text, base_line=base_line)).parse()
+            where_expr = _WhereParser(
+                tokenize_where(where_text, base_line=base_line),
+                options,
+            ).parse()
 
         if order_match is not None:
             order_text = rest[order_match.start() :].strip()
@@ -198,7 +234,19 @@ def parse_query(sql_text: str) -> SelectQuery:
     )
 
 
-def _parse_select_columns(select_part: str, sql_text: str, select_start: int) -> tuple[list[str], dict[str, int]]:
+def _normalize_options(options: ParserOptions | None) -> ParserOptions:
+    if options is None:
+        return ParserOptions.safe_default()
+    if options.filter_engine not in _SUPPORTED_FILTER_ENGINES:
+        return ParserOptions.safe_default()
+    return options
+
+
+def _parse_select_columns(
+    select_part: str,
+    sql_text: str,
+    select_start: int,
+) -> tuple[list[str], dict[str, int]]:
     columns: list[str] = []
     column_lines: dict[str, int] = {}
 

@@ -48,7 +48,7 @@ def tokenize_where(expression: str, base_line: int = 1) -> list[Token]:
 
         if kind == "IDENT":
             upper = raw_value.upper()
-            if upper in {"AND", "OR"}:
+            if upper in {"AND", "OR", "NOT"}:
                 tokens.append(Token(kind=upper, value=upper, line_number=line_number))
             else:
                 tokens.append(Token(kind="IDENT", value=raw_value, line_number=line_number))
