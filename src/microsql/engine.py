@@ -3,9 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from microsql.ast_nodes import Expr, SelectQuery
+from microsql.ast_nodes import SelectQuery
 from microsql.csv_utils import load_csv_rows
 from microsql.exceptions import ValidationException
+from microsql.specifications import ISpecification, Row
 
 RowLoader = Callable[[Path], list[dict[str, Any]]]
 
@@ -28,7 +29,7 @@ def execute_query(
 
     if query.where is not None:
         _validate_where_identifiers(rows, query.where)
-        rows = [row for row in rows if query.where.evaluate(row)]
+        rows = [row for row in rows if query.where.is_satisfied_by(row)]
 
     if query.order_by is not None:
         order_column = query.order_by.column
@@ -57,11 +58,11 @@ def _validate_columns_exist(
             )
 
 
-def _validate_where_identifiers(rows: list[dict[str, Any]], expr: Expr) -> None:
+def _validate_where_identifiers(rows: list[dict[str, Any]], spec: ISpecification[Row]) -> None:
     if not rows:
         return
     available = set(rows[0].keys())
-    for identifier in expr.collect_identifiers():
+    for identifier in spec.collect_identifiers():
         if identifier.name not in available:
             raise ValidationException(
                 f"Unknown column in WHERE clause: {identifier.name}",

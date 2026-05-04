@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-class MicroSQLException(Exception):
+class MicroSQLException(Exception):  # noqa: N818
     def __init__(self, message: str, line_number: int = 1) -> None:
         super().__init__(message)
         self.message = message

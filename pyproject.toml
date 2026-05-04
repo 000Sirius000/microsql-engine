@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "microsql-engine"
-version = "0.2.0"
+version = "0.3.0"
 description = "Micro-SQL engine for CSV files (educational project)"
 authors = ["Student <student@example.com>"]
 readme = "README.md"
@@ -28,7 +28,8 @@ target-version = "py311"
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "N"]
+ignore = ["N802"]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]
