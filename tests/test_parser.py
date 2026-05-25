@@ -61,8 +61,7 @@ def test_parse_query_supports_logical_expressions() -> None:
 
 def test_parse_query_builds_nested_specification_tree() -> None:
     query = parse_query(
-        "SELECT name FROM users.csv "
-        "WHERE (age > 20 AND role = 'admin') OR (salary > 5000)"
+        "SELECT name FROM users.csv WHERE (age > 20 AND role = 'admin') OR (salary > 5000)"
     )
 
     assert isinstance(query.where, OrSpecification)
